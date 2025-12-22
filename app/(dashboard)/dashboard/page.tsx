@@ -15,9 +15,15 @@ export default function DashboardPage() {
     async function fetchData() {
       try {
         const token = await getAccessToken()
+        const headers = { Authorization: `Bearer ${token}` }
+        
+        // Sync wallet first (ensures wallet is stored in DB)
+        await fetch('/api/user/sync-wallet', { method: 'POST', headers })
+        
+        // Then fetch balance and profile
         const [balanceRes, profileRes] = await Promise.all([
-          fetch('/api/user/balance', { headers: { Authorization: `Bearer ${token}` } }),
-          fetch('/api/user/profile', { headers: { Authorization: `Bearer ${token}` } }),
+          fetch('/api/user/balance', { headers }),
+          fetch('/api/user/profile', { headers }),
         ])
         if (balanceRes.ok) setBalance(await balanceRes.json())
         if (profileRes.ok) setProfile(await profileRes.json())
