@@ -221,7 +221,7 @@ export function InvoicePDF({ invoice }: { invoice: InvoiceData }) {
             </Text>
           </View>
           <View style={[styles.statusBadge, isPaid ? styles.statusPaid : styles.statusPending]}>
-            <Text>{isPaid ? '✓ PAID' : '○ PENDING'}</Text>
+            <Text>{isPaid ? 'PAID' : 'PENDING'}</Text>
           </View>
         </View>
 
