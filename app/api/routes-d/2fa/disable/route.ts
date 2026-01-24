@@ -3,9 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import speakeasy from 'speakeasy'
 import { decrypt } from '@/lib/crypto'
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
+import { sendEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
     try {
@@ -21,8 +19,8 @@ export async function POST(request: NextRequest) {
 
         if (!code) return NextResponse.json({ error: 'Code is required' }, { status: 400 })
 
-        if (user.twoFactorEnabled && user.twoFactorSecret) {
-            const secret = decrypt(user.twoFactorSecret)
+        if ((user as any).twoFactorEnabled && (user as any).twoFactorSecret) {
+            const secret = decrypt((user as any).twoFactorSecret)
             const verified = speakeasy.totp.verify({
                 secret: secret,
                 encoding: 'base32',
@@ -41,12 +39,11 @@ export async function POST(request: NextRequest) {
                 twoFactorEnabled: false,
                 twoFactorSecret: null,
                 backupCodes: []
-            }
+            } as any
         })
 
         if (user.email) {
-            await resend.emails.send({
-                from: 'LancePay <security@lancepay.com>',
+            await sendEmail({
                 to: user.email,
                 subject: '2FA Disabled',
                 html: '<p>Two-factor authentication has been disabled on your account.</p>'

@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
       include: {
         escrowEvents: { orderBy: { createdAt: 'asc' } },
       },
-    }) as any
+    })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
     const isFreelancer = invoice.userId === auth.user.id

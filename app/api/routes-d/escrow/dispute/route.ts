@@ -22,8 +22,7 @@ export async function POST(request: NextRequest) {
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { user: { select: { email: true } } },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    }) as any
+    })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
     if (invoice.clientEmail.toLowerCase() !== clientEmail.toLowerCase()) {
@@ -35,22 +34,20 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const updated = await prisma.$transaction(async (tx) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const inv = (await (tx as any).invoice.update({
+      const inv = await tx.invoice.update({
         where: { id: invoice.id },
         data: { escrowStatus: 'disputed', escrowDisputedAt: now },
         select: { id: true, escrowDisputedAt: true },
-      })) as { id: string; escrowDisputedAt: Date | null }
+      })
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (tx as any).escrowEvent.create({
+      await tx.escrowEvent.create({
         data: {
           invoiceId: invoice.id,
           eventType: 'disputed',
           actorType: 'client',
           actorEmail: clientEmail,
           notes: reason,
-          metadata: { requestedAction },
+          metadata: { requestedAction } as any,
         },
       })
 

@@ -8,23 +8,24 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  privyId   String   @unique
-  email     String   @unique
-  name      String?
-  phone     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String            @id @default(uuid())
+  privyId          String            @unique
+  email            String            @unique
+  name             String?
+  phone            String?
+  twoFactorSecret  String?
+  twoFactorEnabled Boolean           @default(false)
+  backupCodes      String[]          @default([])
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
-  wallet       Wallet?
-  bankAccounts BankAccount[]
-  invoices     Invoice[]
-  transactions Transaction[]
-  twoFactorEnabled Boolean  @default(false)
-  twoFactorSecret  String? // Encrypted 2FA secret
-  backupCodes      String[] // Encrypted backup codes
+  wallet           Wallet?
+  bankAccounts     BankAccount[]
+  invoices         Invoice[]
+  transactions     Transaction[]
   reminderSettings ReminderSettings?
   apiKeys          ApiKey[]
+  autoSwapRule     AutoSwapRule?
 }
 
 model Wallet {
@@ -47,10 +48,9 @@ model BankAccount {
   isDefault     Boolean  @default(false)
   createdAt     DateTime @default(now())
 
-  user        User          @relation(fields: [userId], references: [id])
-  withdrawals Transaction[] @relation("WithdrawalBank")
-
-  @@unique([userId, accountNumber])
+  user          User           @relation(fields: [userId], references: [id])
+  withdrawals   Transaction[]  @relation("WithdrawalBank")
+  AutoSwapRule  AutoSwapRule[]
 }
 
 model Invoice {
@@ -69,9 +69,16 @@ model Invoice {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
-  user        User         @relation(fields: [userId], references: [id])
-  transaction Transaction?
+  user             User              @relation(fields: [userId], references: [id])
+  transaction      Transaction?
   paymentReminders PaymentReminder[]
+  dispute          Dispute?
+  escrowEnabled           Boolean           @default(false)
+  escrowStatus            String            @default("none") // none, pending, funded, released, disputed
+  escrowReleaseConditions String?
+  escrowReleasedAt        DateTime?
+  escrowDisputedAt        DateTime?
+  escrowEvents            EscrowEvent[]
 }
 
 model PaymentReminder {
@@ -111,8 +118,11 @@ model Transaction {
   invoiceId     String?   @unique
   bankAccountId String?
   txHash        String?
+  externalId    String?   @unique
+  error         String?
   createdAt     DateTime  @default(now())
   completedAt   DateTime?
+  autoSwapTriggered Boolean @default(false) // Whether this was triggered by auto-swap
 
   user        User         @relation(fields: [userId], references: [id])
   invoice     Invoice?     @relation(fields: [invoiceId], references: [id])
@@ -134,4 +144,78 @@ model ApiKey {
 
   @@index([userId])
   @@index([hashedKey])
+model AutoSwapRule {
+  id            String      @id @default(uuid())
+  userId        String      @unique
+  percentage    Int         // e.g., 70 (for 70%)
+  bankAccountId String
+  isActive      Boolean     @default(true)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bankAccount BankAccount @relation(fields: [bankAccountId], references: [id])
+}
+
+model BulkInvoiceJob {
+  id           String    @id @default(uuid())
+  userId       String
+  status       String    @default("processing") // processing, completed, failed
+  totalCount   Int
+  successCount Int       @default(0)
+  failedCount  Int       @default(0)
+  results      Json      @default("[]")
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([userId])
+}
+
+model Dispute {
+  id               String    @id @default(uuid())
+  invoiceId        String    @unique
+  initiatedBy      String    // 'freelancer' or 'client'
+  initiatorEmail   String
+  reason           String
+  requestedAction  String    // 'refund', 'revision'
+  status           String    @default("open") // open, resolved, closed
+  resolution       String?
+  resolvedBy       String?   // 'admin' or email of resolver
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  resolvedAt       DateTime?
+
+  invoice  Invoice          @relation(fields: [invoiceId], references: [id])
+  messages DisputeMessage[]
+
+  @@index([invoiceId])
+}
+
+model DisputeMessage {
+  id          String   @id @default(uuid())
+  disputeId   String
+  senderType  String   // 'freelancer', 'client', 'admin'
+  senderEmail String
+  message     String
+  attachments Json     @default("[]")
+  createdAt   DateTime @default(now())
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+
+  @@index([disputeId])
+}
+
+model EscrowEvent {
+  id         String   @id @default(uuid())
+  invoiceId  String
+  eventType  String   // e.g., 'created', 'funded', 'released', 'disputed'
+  actorType  String   // 'freelancer', 'client', 'admin', 'system'
+  actorEmail String
+  notes      String?
+  metadata   Json?    @default("{}")
+  createdAt  DateTime @default(now())
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([invoiceId])
 }

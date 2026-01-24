@@ -1,8 +1,6 @@
 import { prisma } from '@/lib/db'
 // import { verifyAuthToken } from '@/lib/auth' 
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
+import { sendEmail } from '@/lib/email'
 
 export async function sendScheduledReminders() {
     console.log('🔄 Starting scheduled reminders job...')
@@ -10,34 +8,18 @@ export async function sendScheduledReminders() {
     today.setHours(0, 0, 0, 0) // Normalize to start of day
 
     // Optimized Fetch: Get all pending invoices with due dates, including settings and history
-    const invoices = await prisma.invoice.findMany({
+    const invoices = await (prisma.invoice as any).findMany({
         where: {
             status: 'pending',
             dueDate: { not: null }
         },
-        select: {
-            id: true,
-            invoiceNumber: true,
-            clientEmail: true,
-            clientName: true,
-            amount: true,
-            currency: true,
-            dueDate: true,
-            userId: true,
-            paymentLink: true,
+        include: {
             user: {
-                select: {
-                    name: true,
+                include: {
                     reminderSettings: true
                 }
             },
-            paymentReminders: {
-                select: {
-                    reminderType: true,
-                    daysOffset: true,
-                    sentAt: true
-                }
-            }
+            paymentReminders: true
         }
     })
 
@@ -45,59 +27,42 @@ export async function sendScheduledReminders() {
 
     const emailsToSend: Promise<any>[] = []
 
-    for (const invoice of invoices) {
-        const settings = invoice.user.reminderSettings
+    for (const invoice of (invoices as any[])) {
+        const settings = (invoice.user as any).reminderSettings
         if (!settings || !settings.enabled) continue
 
-        if (!invoice.dueDate) continue // Should be filtered by query but safe check
+        if (!invoice.dueDate) continue 
 
         const dueDate = new Date(invoice.dueDate)
         dueDate.setHours(0, 0, 0, 0)
 
-        // Calculate difference in days: (Due - Today)
-        // Positive = Due in X days (Before Due)
-        // Zero = Due Today
-        // Negative = Overdue by X days
         const diffTime = dueDate.getTime() - today.getTime()
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
 
         let reminderType: string | null = null
         let daysOffset: number | null = null
 
-        // Check Before Due
-        // If diffDays is positive, e.g., 3. settings.beforeDueDays includes 3.
         if (diffDays > 0) {
             if (settings.beforeDueDays.includes(diffDays)) {
                 reminderType = 'before_due'
                 daysOffset = diffDays
             }
         }
-        // Check On Due
         else if (diffDays === 0) {
             if (settings.onDueEnabled) {
                 reminderType = 'on_due'
                 daysOffset = 0
             }
         }
-        // Check Overdue
-        // If diffDays is negative, e.g., -3. overdue by 3 days. 
-        // settings.afterDueDays includes absolute value (3).
         else {
             const overdueDays = Math.abs(diffDays)
             if (settings.afterDueDays.includes(overdueDays)) {
                 reminderType = 'overdue'
-                daysOffset = overdueDays // storing positive value for offset usually cleaner or store exact diff? Schema says just 'daysOffset', I'll store the logic value (e.g. 3 for 3 days after)
+                daysOffset = overdueDays
             }
         }
 
         if (reminderType && daysOffset !== null) {
-            // Check if already sent today/for this offset
-            // We check if we have a reminder of this type with this offset sent recently (e.g. today)
-            // Actually, for 'before_due' 3 days, it happens once. We just check if we ever sent 'before_due' with offset 3. 
-            // Or simpler: check if we sent ANY 'before_due' reminder for this invoice *on this day*? No, we might have multiple schedules? Unlikely.
-            // Best check: Have we sent a reminder of `reminderType` with `daysOffset` ever? 
-            // Since offsets are discrete (3 days before, 1 day before), checking (type, offset) uniqueness is sufficient.
-
             const alreadySent = invoice.paymentReminders.some((r: any) =>
                 r.reminderType === reminderType &&
                 r.daysOffset === daysOffset
@@ -122,8 +87,7 @@ async function processReminder(invoice: any, type: string, offset: number, custo
     try {
         const subjectPrefix = type === 'overdue' ? 'Overdue: ' : 'Reminder: '
 
-        await resend.emails.send({
-            from: 'LancePay <reminders@lancepay.com>',
+        await sendEmail({
             to: invoice.clientEmail,
             subject: `${subjectPrefix}Invoice ${invoice.invoiceNumber}`,
             html: `
@@ -137,7 +101,7 @@ async function processReminder(invoice: any, type: string, offset: number, custo
             `
         })
 
-        await prisma.paymentReminder.create({
+        await (prisma as any).paymentReminder.create({
             data: {
                 invoiceId: invoice.id,
                 reminderType: type,

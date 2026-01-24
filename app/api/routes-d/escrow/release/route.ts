@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const invoice = await prisma.invoice.findUnique({
       where: { id: invoiceId },
       include: { user: { select: { email: true, name: true } } },
-    }) as any
+    })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
     if (invoice.clientEmail.toLowerCase() !== clientEmail.toLowerCase()) {
@@ -43,7 +43,7 @@ export async function POST(request: NextRequest) {
         select: { id: true, escrowStatus: true, escrowReleasedAt: true },
       })
 
-      await (tx as any).escrowEvent.create({
+      await tx.escrowEvent.create({
         data: {
           invoiceId: invoice.id,
           eventType: 'released',

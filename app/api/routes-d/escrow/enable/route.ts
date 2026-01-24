@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
 
     const { invoiceId, releaseConditions } = parsed.data
 
-    const invoice = (await prisma.invoice.findUnique({ where: { id: invoiceId } })) as any
+    const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId } })
     if (!invoice) return NextResponse.json({ error: 'Invoice not found' }, { status: 404 })
 
     // Only freelancer (invoice owner) can enable escrow.
@@ -33,14 +33,14 @@ export async function POST(request: NextRequest) {
         select: { id: true, escrowEnabled: true, escrowStatus: true, escrowReleaseConditions: true },
       })
 
-      await (tx as any).escrowEvent.create({
+      await tx.escrowEvent.create({
         data: {
           invoiceId: invoice.id,
           eventType: 'created',
           actorType: 'freelancer',
           actorEmail: auth.email,
           notes: 'Escrow enabled on invoice',
-          metadata: { releaseConditions: releaseConditions ?? null },
+          metadata: { releaseConditions: releaseConditions ?? null } as any,
         },
       })
 

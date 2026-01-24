@@ -3,9 +3,7 @@ import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
 import speakeasy from 'speakeasy'
 import { decrypt } from '@/lib/crypto'
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
+import { sendEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
     try {
@@ -19,11 +17,11 @@ export async function POST(request: NextRequest) {
         const { code } = await request.json()
         if (!code) return NextResponse.json({ error: 'Code is required' }, { status: 400 })
 
-        if (!user.twoFactorSecret) {
+        if (!(user as any).twoFactorSecret) {
             return NextResponse.json({ error: '2FA not initialized' }, { status: 400 })
         }
 
-        const secret = decrypt(user.twoFactorSecret)
+        const secret = decrypt((user as any).twoFactorSecret)
         const verified = speakeasy.totp.verify({
             secret: secret,
             encoding: 'base32',
@@ -34,13 +32,12 @@ export async function POST(request: NextRequest) {
         if (verified) {
             await prisma.user.update({
                 where: { id: user.id },
-                data: { twoFactorEnabled: true }
+                data: { twoFactorEnabled: true } as any
             })
 
             // Send confirmation email if email exists
             if (user.email) {
-                await resend.emails.send({
-                    from: 'LancePay <security@lancepay.com>', // Assuming domain
+                await sendEmail({
                     to: user.email,
                     subject: '2FA Enabled',
                     html: '<p>Two-factor authentication has been enabled on your account.</p>'

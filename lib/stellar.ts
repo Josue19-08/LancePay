@@ -1,23 +1,23 @@
-import * as StellarSdk from "@stellar/stellar-sdk";
+import { Horizon, Networks, Asset, Keypair, TransactionBuilder, Operation, StrKey, Transaction } from "@stellar/stellar-sdk";
 
 /**
  * Stellar Network Configuration
  */
 export const STELLAR_NETWORK: string =
   process.env.NEXT_PUBLIC_STELLAR_NETWORK === "mainnet"
-    ? StellarSdk.Networks.PUBLIC
-    : StellarSdk.Networks.TESTNET;
+    ? Networks.PUBLIC
+    : Networks.TESTNET;
 
 export const HORIZON_URL: string =
   process.env.NEXT_PUBLIC_STELLAR_HORIZON_URL ||
   "https://horizon-testnet.stellar.org";
 
-export const server: StellarSdk.Server = new StellarSdk.Server(HORIZON_URL);
+export const server = new Horizon.Server(HORIZON_URL);
 
 /**
  * USDC Asset
  */
-export const USDC_ASSET: StellarSdk.Asset = new StellarSdk.Asset(
+export const USDC_ASSET = new Asset(
   process.env.NEXT_PUBLIC_USDC_CODE || "USDC",
   process.env.NEXT_PUBLIC_USDC_ISSUER!,
 );
@@ -64,15 +64,15 @@ export async function getAccountBalance(
   publicKey: string,
 ): Promise<AccountBalance> {
   try {
-    const account: StellarSdk.AccountResponse = await server.loadAccount(publicKey);
+    const account = await server.loadAccount(publicKey);
 
     const xlmBalance: string =
-      account.balances.find((b: StellarSdk.Balance) => b.asset_type === "native")
+      account.balances.find((b: any) => b.asset_type === "native")
         ?.balance || "0";
 
     const usdcBalance: string =
       account.balances.find(
-        (b: StellarSdk.Balance) =>
+        (b: any) =>
           b.asset_type !== "native" &&
           b.asset_code === USDC_ASSET.code &&
           b.asset_issuer === USDC_ASSET.issuer,
@@ -91,7 +91,7 @@ export async function getAccountBalance(
  * @returns boolean
  */
 export function isValidStellarAddress(address: string): boolean {
-  return StellarSdk.StrKey.isValidEd25519PublicKey(address);
+  return StrKey.isValidEd25519PublicKey(address);
 }
 
 /**
@@ -114,15 +114,15 @@ export async function sendUSDCPayment(
   }
 
   try {
-    const senderKeypair: StellarSdk.Keypair = StellarSdk.Keypair.fromSecret(fromSecretKey);
-    const account: StellarSdk.AccountResponse = await server.loadAccount(fromPublicKey);
+    const senderKeypair = Keypair.fromSecret(fromSecretKey);
+    const account = await server.loadAccount(fromPublicKey);
 
-    const transaction: StellarSdk.Transaction = new StellarSdk.TransactionBuilder(account, {
-      fee: await server.fetchBaseFee(),
+    const transaction = new TransactionBuilder(account, {
+      fee: (await server.fetchBaseFee()).toString(),
       networkPassphrase: STELLAR_NETWORK,
     })
       .addOperation(
-        StellarSdk.Operation.payment({
+        Operation.payment({
           destination: toPublicKey,
           asset: USDC_ASSET,
           amount,
@@ -133,7 +133,7 @@ export async function sendUSDCPayment(
 
     transaction.sign(senderKeypair);
 
-    const txResult: StellarSdk.SubmitTransactionResponse = await server.submitTransaction(transaction);
+    const txResult = await server.submitTransaction(transaction);
 
     return txResult.hash;
   } catch (err: unknown) {

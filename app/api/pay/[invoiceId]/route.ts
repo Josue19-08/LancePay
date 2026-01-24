@@ -29,11 +29,24 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     return NextResponse.json({ error: 'Invalid invoice' }, { status: 400 })
   }
 
-  await prisma.invoice.update({ where: { id: invoice.id }, data: { status: 'paid', paidAt: new Date() } })
+  const updatedInvoice = await prisma.invoice.update({ 
+    where: { id: invoice.id }, 
+    data: { status: 'paid', paidAt: new Date() },
+    include: { user: true }
+  })
 
   await prisma.transaction.create({
     data: { userId: invoice.userId, type: 'incoming', status: 'completed', amount: invoice.amount, currency: invoice.currency, invoiceId: invoice.id, completedAt: new Date() },
   })
+
+  // Process auto-swap
+  const { processAutoSwap } = await import('@/lib/auto-swap')
+  await processAutoSwap(
+    updatedInvoice.userId,
+    Number(updatedInvoice.amount),
+    updatedInvoice.user.email,
+    updatedInvoice.user.name || undefined
+  )
 
   return NextResponse.json({ success: true })
 }

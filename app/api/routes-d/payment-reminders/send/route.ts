@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { verifyAuthToken } from '@/lib/auth'
-import { Resend } from 'resend'
-
-const resend = new Resend(process.env.RESEND_API_KEY)
+import { sendEmail } from '@/lib/email'
 
 export async function POST(request: NextRequest) {
     try {
@@ -25,7 +23,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Rate Limit Check: Check if manual reminder sent in last 24h
-        const lastManualReminder = await prisma.paymentReminder.findFirst({
+        const lastManualReminder = await (prisma as any).paymentReminder.findFirst({
             where: {
                 invoiceId,
                 reminderType: 'manual',
@@ -38,8 +36,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Send Email
-        const { data, error } = await resend.emails.send({
-            from: 'LancePay <reminders@lancepay.com>',
+        const { success } = await sendEmail({
             to: invoice.clientEmail,
             subject: `Reminder: Invoice ${invoice.invoiceNumber} from ${user.name || 'Freelancer'}`,
             html: `
@@ -52,12 +49,12 @@ export async function POST(request: NextRequest) {
         `
         })
 
-        if (error) {
-            throw new Error(error.message)
+        if (!success) {
+            throw new Error('Failed to send email')
         }
 
         // Track Reminder
-        const reminder = await prisma.paymentReminder.create({
+        const reminder = await (prisma as any).paymentReminder.create({
             data: {
                 invoiceId,
                 reminderType: 'manual',
