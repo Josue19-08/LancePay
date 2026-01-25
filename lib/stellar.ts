@@ -64,6 +64,13 @@ export async function getAccountBalance(
   publicKey: string,
 ): Promise<AccountBalance> {
   try {
+    const account: StellarSdk.AccountResponse =
+      await server.loadAccount(publicKey);
+
+    const xlmBalance: string =
+      account.balances.find(
+        (b: StellarSdk.Balance) => b.asset_type === "native",
+      )?.balance || "0";
     const account = await server.loadAccount(publicKey);
 
     const xlmBalance: string =
@@ -81,7 +88,10 @@ export async function getAccountBalance(
     return { xlm: xlmBalance, usdc: usdcBalance };
   } catch (error: unknown) {
     console.error("Error fetching account balance:", error);
-    throw { type: "network_error", message: "Failed to fetch Stellar account balance." } as StellarError;
+    throw {
+      type: "network_error",
+      message: "Failed to fetch Stellar account balance.",
+    } as StellarError;
   }
 }
 
@@ -110,10 +120,37 @@ export async function sendUSDCPayment(
   amount: string,
 ): Promise<string> {
   if (!isValidStellarAddress(toPublicKey)) {
-    throw { type: "invalid_address", message: "Invalid recipient Stellar address." } as StellarError;
+    throw {
+      type: "invalid_address",
+      message: "Invalid recipient Stellar address.",
+    } as StellarError;
   }
 
   try {
+    const senderKeypair: StellarSdk.Keypair =
+      StellarSdk.Keypair.fromSecret(fromSecretKey);
+    const account: StellarSdk.AccountResponse =
+      await server.loadAccount(fromPublicKey);
+
+    const transaction: StellarSdk.Transaction =
+      new StellarSdk.TransactionBuilder(account, {
+        fee: await server.fetchBaseFee(),
+        networkPassphrase: STELLAR_NETWORK,
+      })
+        .addOperation(
+          StellarSdk.Operation.payment({
+            destination: toPublicKey,
+            asset: USDC_ASSET,
+            amount,
+          }),
+        )
+        .setTimeout(30)
+        .build();
+
+    transaction.sign(senderKeypair);
+
+    const txResult: StellarSdk.SubmitTransactionResponse =
+      await server.submitTransaction(transaction);
     const senderKeypair = Keypair.fromSecret(fromSecretKey);
     const account = await server.loadAccount(fromPublicKey);
 
@@ -144,7 +181,8 @@ export async function sendUSDCPayment(
 
     if (err && typeof err === "object") {
       const stellarError = err as StellarErrorResponse;
-      const opsMessage = stellarError.response?.data?.extras?.result_codes?.operations?.[0];
+      const opsMessage =
+        stellarError.response?.data?.extras?.result_codes?.operations?.[0];
       if (opsMessage) {
         message = opsMessage;
       }

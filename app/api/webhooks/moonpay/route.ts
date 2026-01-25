@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { sendPaymentReceivedEmail } from '@/lib/email'
+import { createReferralEarning } from '@/lib/referral'
 import { processAutoSwap } from '@/lib/auto-swap'
 import { dispatchWebhooks } from '@/lib/webhooks'
 
@@ -18,7 +19,16 @@ export async function POST(request: NextRequest) {
 
     const invoice = await prisma.invoice.findUnique({
       where: { invoiceNumber },
-      include: { user: true }
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            name: true,
+            referredById: true
+          }
+        }
+      }
     })
 
     if (!invoice || invoice.status === 'paid') return NextResponse.json({ received: true })
@@ -42,6 +52,23 @@ export async function POST(request: NextRequest) {
       })
     ])
 
+    if (invoice.user.referredById) {
+      await createReferralEarning({
+        referrerId: invoice.user.referredById,
+        referredUserId: invoice.userId,
+        invoiceId: invoice.id,
+        invoiceAmount: Number(invoice.amount)
+      })
+    }
+
+    if (invoice.user.email) {
+      await sendPaymentReceivedEmail({
+        to: invoice.user.email,
+        freelancerName: invoice.user.name || 'Freelancer',
+        clientName: invoice.clientName || 'Client',
+        invoiceNumber: invoice.invoiceNumber,
+        amount: Number(invoice.amount),
+        currency: invoice.currency,
     const paymentAmount = Number(invoice.amount)
 
     // Process auto-swap if user has an active rule

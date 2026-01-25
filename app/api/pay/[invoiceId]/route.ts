@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { createReferralEarning } from '@/lib/referral'
 import { dispatchWebhooks } from '@/lib/webhooks'
 
-export async function GET(request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
   const { invoiceId } = await params
   const invoice = await prisma.invoice.findUnique({
     where: { invoiceNumber: invoiceId },
@@ -34,23 +35,55 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   })
 }
 
-export async function POST(request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
+export async function POST(_request: NextRequest, { params }: { params: Promise<{ invoiceId: string }> }) {
   const { invoiceId } = await params
-  const invoice = await prisma.invoice.findUnique({ where: { invoiceNumber: invoiceId } })
+  const invoice = await prisma.invoice.findUnique({
+    where: { invoiceNumber: invoiceId },
+    include: {
+      user: {
+        select: {
+          id: true,
+          referredById: true
+        }
+      }
+    }
+  })
 
   if (!invoice || invoice.status !== 'pending') {
     return NextResponse.json({ error: 'Invalid invoice' }, { status: 400 })
   }
 
+  await prisma.$transaction([
+    prisma.invoice.update({
+      where: { id: invoice.id },
+      data: { status: 'paid', paidAt: new Date() }
+    }),
+    prisma.transaction.create({
+      data: {
+        userId: invoice.userId,
+        type: 'incoming',
+        status: 'completed',
+        amount: invoice.amount,
+        currency: invoice.currency,
+        invoiceId: invoice.id,
+        completedAt: new Date()
+      }
+    })
+  ])
   const updatedInvoice = await prisma.invoice.update({ 
     where: { id: invoice.id }, 
     data: { status: 'paid', paidAt: new Date() },
     include: { user: true }
   })
 
-  await prisma.transaction.create({
-    data: { userId: invoice.userId, type: 'incoming', status: 'completed', amount: invoice.amount, currency: invoice.currency, invoiceId: invoice.id, completedAt: new Date() },
-  })
+  if (invoice.user.referredById) {
+    await createReferralEarning({
+      referrerId: invoice.user.referredById,
+      referredUserId: invoice.user.id,
+      invoiceId: invoice.id,
+      invoiceAmount: Number(invoice.amount)
+    })
+  }
 
   // Process auto-swap
   const { processAutoSwap } = await import('@/lib/auto-swap')
