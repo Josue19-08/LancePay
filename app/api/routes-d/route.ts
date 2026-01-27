@@ -31,6 +31,9 @@ export async function GET() {
       utils: {
         feeQuote: '/api/routes-d/utils/fee-quote?amount={usd_amount}',
       },
+      verification: {
+        clientCheck: '/api/routes-d/verification/client-check?email={email}',
+      },
     },
   })
 }
