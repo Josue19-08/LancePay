@@ -40,6 +40,7 @@ model User {
   savingsGoals     SavingsGoal[]
   payoutBatches    PayoutBatch[]
   manualPayments   ManualPayment[] @relation("ManualPaymentVerifier")
+  collaborations   InvoiceCollaborator[] @relation("SubContractorCollaborations")
 }
 
 model Wallet {
@@ -87,6 +88,7 @@ model Invoice {
   transaction      Transaction?
   paymentReminders PaymentReminder[]
   dispute          Dispute?
+  collaborators    InvoiceCollaborator[]
   escrowEnabled           Boolean           @default(false)
   escrowStatus            String            @default("none") // none, pending, funded, released, disputed
   escrowReleaseConditions String?
@@ -493,4 +495,23 @@ model SecurityWatchlist {
 
   @@index([type])
   @@index([value])
+}
+
+model InvoiceCollaborator {
+  id              String    @id @default(uuid())
+  invoiceId       String
+  subContractorId String
+  sharePercentage Decimal   @db.Decimal(5, 2)
+  payoutStatus    String    @default("pending") @db.VarChar(20) // pending, completed, failed
+  internalTxId    String?   @db.VarChar(255)
+  paidAt          DateTime?
+  createdAt       DateTime  @default(now())
+
+  invoice       Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  subContractor User    @relation("SubContractorCollaborations", fields: [subContractorId], references: [id], onDelete: Cascade)
+
+  @@unique([invoiceId, subContractorId])
+  @@index([invoiceId])
+  @@index([subContractorId])
+  @@index([payoutStatus])
 }
