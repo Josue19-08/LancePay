@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { fundNewWallet } from '@/lib/stellar-funding'
 import { sendAdminAlertEmail } from '@/lib/email'
-import { Prisma } from '@prisma/client'
+import { PrismaClientKnownRequestError } from '@prisma/client'
 import { logger } from '@/lib/logger'
 
 type PrivyLinkedAccount = {
@@ -103,7 +103,7 @@ function extractWalletAddressFromLinkedAccount(linkedAccount: PrivyLinkedAccount
 }
 
 function isUniqueConstraintError(e: unknown): boolean {
-  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'
+  return e instanceof PrismaClientKnownRequestError && e.code === 'P2002'
 }
 
 /**
